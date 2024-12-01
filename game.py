@@ -6,19 +6,12 @@ import math
 
 # Initialize Pygame
 pygame.init()
-
-# Initialize Pygame mixer for sound
 pygame.mixer.init()
 
 # Load sounds
 shoot_sound = pygame.mixer.Sound(os.path.join('assets', 'sounds', 'shoot.wav'))
 explosion_sound = pygame.mixer.Sound(os.path.join('assets', 'sounds', 'explosion.wav'))
-# Commenting out background music for now
-# background_music = os.path.join('assets', 'sounds', 'background.mp3')
-
-# Comment out background music loading
-# pygame.mixer.music.load(background_music)
-# pygame.mixer.music.play(-1)  # Loop indefinitely
+powerup_sound = pygame.mixer.Sound(os.path.join('assets', 'sounds', 'powerup.wav'))
 
 # Set up the game window
 WIDTH = 800
@@ -95,7 +88,7 @@ def create_laser():
     surface = pygame.Surface((8, 24), pygame.SRCALPHA)
     
     # Laser beam
-    pygame.draw.rect(surface, YELLOW, (0, 0, 8, 24))
+    pygame.draw.rect(surface, (255, 0, 0), (0, 0, 8, 24))
     
     # Glow effect
     pygame.draw.rect(surface, WHITE, (2, 0, 4, 24))
@@ -119,6 +112,22 @@ ENEMY_IMG2 = create_enemy_ship(GREEN, BLUE)
 LASER_IMG = create_laser()
 BOSS_LASER_IMG = create_boss_laser()
 
+# Add new colors and constants
+POWER_UP_COLORS = [(255, 223, 0), (0, 255, 255), (255, 0, 255), (0, 255, 0)]  # Gold, Cyan, Magenta, Green
+
+# Add power-ups list and variables
+power_ups = []
+SCORE_MULTIPLIER = 1
+MAX_MULTIPLIER = 8
+MULTIPLIER_DURATION = 300  # 5 seconds at 60 FPS
+multiplier_timer = 0
+rapid_fire = False
+rapid_fire_timer = 0
+shield_active = False
+shield_timer = 0
+double_laser = True  # Always true now
+double_laser_timer = 0
+
 # Player
 player_width = 64
 player_height = 64
@@ -133,13 +142,13 @@ CRASH_RECOVERY_TIME = 120  # 2 seconds at 60 FPS
 # Laser
 laser_width = 8
 laser_height = 24
+double_laser_width = 16  # Wider laser for double shot
 laser_speed = 10
 lasers = []
 
 # Enemy
 enemy_width = 48
 enemy_height = 48
-enemy_speed = 2
 enemies = []
 enemy_spawn_delay = 45  # Spawn enemies faster
 enemy_timer = 0
@@ -152,11 +161,38 @@ boss_lasers = []
 boss_shoot_timer = 0
 
 # Level configurations
-LEVEL_CONFIGS = {
-    1: {"enemy_speed": 2, "spawn_delay": 60, "enemies_to_clear": 20, "boss_health": 5, "boss_shoot_delay": 60},
-    2: {"enemy_speed": 3, "spawn_delay": 45, "enemies_to_clear": 30, "boss_health": 8, "boss_shoot_delay": 45},
-    3: {"enemy_speed": 4, "spawn_delay": 30, "enemies_to_clear": 40, "boss_health": 10, "boss_shoot_delay": 30}
-}
+def get_level_config(level):
+    # Base configurations
+    base_config = {
+        "spawn_delay": max(10, 45 - (level - 1) * 5),  # Gets faster but not below 10
+        "enemy_speed": min(10, 2 + (level - 1)),       # Gets faster but caps at 10
+        "enemy_health": 1 + (level - 1) // 2,          # +1 health every 2 levels
+        "boss_health": 100 + (level - 1) * 50          # +50 health per level
+    }
+    return base_config
+
+# Enemy class to track health
+class Enemy:
+    def __init__(self, x, y, type, health):
+        self.x = x
+        self.y = y
+        self.type = type
+        self.health = health
+        self.hit_timer = 0
+        
+    def draw(self, surface):
+        if self.hit_timer > 0:
+            # Flash white when hit
+            pygame.draw.rect(surface, (255, 255, 255), 
+                           (self.x, self.y, enemy_width, enemy_height))
+            self.hit_timer -= 1
+        else:
+            surface.blit(self.type, (self.x, self.y))
+            
+    def take_damage(self):
+        self.health -= 1
+        self.hit_timer = 5  # Flash for 5 frames
+        return self.health <= 0
 
 # Score and UI
 score = 0
@@ -289,21 +325,77 @@ crash_effect = None
 # Add explosions list to track active explosions
 explosions = []
 
+# Add power-up class
+class PowerUp:
+    def __init__(self, x, y, power_type):
+        self.x = x
+        self.y = y
+        self.type = power_type  # 0: Score Multiplier, 1: Rapid Fire, 2: Shield, 3: Double Laser
+        self.width = 20
+        self.height = 20
+        self.speed = 2
+        self.color = POWER_UP_COLORS[power_type]
+        self.pulse = 0
+        
+    def update(self):
+        self.y += self.speed
+        self.pulse = (self.pulse + 1) % 60
+        return self.y < HEIGHT
+        
+    def draw(self, surface):
+        # Draw the main power-up box
+        pygame.draw.rect(surface, self.color, (self.x, self.y, self.width, self.height))
+        
+        # Draw pulsing glow effect
+        glow_size = abs(math.sin(self.pulse * 0.1)) * 10  # Pulsing size
+        
+        # Draw multiple rectangles with decreasing opacity for glow effect
+        for i in range(3):
+            glow_rect = (
+                self.x - i * 2 - glow_size/2,
+                self.y - i * 2 - glow_size/2,
+                self.width + i * 4 + glow_size,
+                self.height + i * 4 + glow_size
+            )
+            glow_alpha = 128 // (i + 1)  # Decreasing alpha
+            glow_surface = pygame.Surface((glow_rect[2], glow_rect[3]), pygame.SRCALPHA)
+            glow_color = (*self.color, glow_alpha)  # Create RGBA color
+            pygame.draw.rect(glow_surface, glow_color, (0, 0, glow_rect[2], glow_rect[3]))
+            surface.blit(glow_surface, (glow_rect[0], glow_rect[1]))
+
+# Add reset_level function
+def reset_level():
+    global player_x, player_y, enemies, lasers, boss, boss_health, boss_lasers, power_ups
+    global SCORE_MULTIPLIER, multiplier_timer, rapid_fire, rapid_fire_timer, shield_active, shield_timer, double_laser, double_laser_timer
+    
+    # Reset player position
+    player_x = WIDTH // 2 - player_width // 2
+    player_y = HEIGHT - player_height - 20
+    
+    # Clear all game objects
+    enemies = []
+    lasers = []
+    power_ups = []
+    
+    # Reset boss
+    boss = None
+    boss_health = 100
+    boss_lasers = []
+    
+    # Reset power-ups
+    SCORE_MULTIPLIER = 1
+    multiplier_timer = 0
+    rapid_fire = False
+    rapid_fire_timer = 0
+    shield_active = False
+    shield_timer = 0
+    double_laser = True  # Always true now
+    double_laser_timer = 0
+
 # Game loop
 clock = pygame.time.Clock()
 running = True
-
-def reset_level():
-    global enemies, lasers, enemies_destroyed, boss, boss_health, boss_lasers, boss_shoot_timer, explosions
-    enemies.clear()
-    lasers.clear()
-    boss_lasers.clear()
-    explosions.clear()
-    enemies_destroyed = 0
-    boss = None
-    boss_shoot_timer = 0
-    if current_level in LEVEL_CONFIGS:
-        boss_health = LEVEL_CONFIGS[current_level]["boss_health"]
+last_shot = 0
 
 while running:
     # Event handling
@@ -311,17 +403,17 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                if game_state == GameState.MENU:
-                    game_state = GameState.PLAYING
-                    reset_level()
-                elif game_state == GameState.GAME_OVER:
-                    # Reset game
-                    score = 0
-                    current_level = 1
-                    lives = 3  # Reset to 3 lives
-                    game_state = GameState.PLAYING
-                    reset_level()
+            if event.key == pygame.K_x:  # Close game when X is pressed
+                running = False
+            if event.key == pygame.K_SPACE and game_state == GameState.MENU:
+                game_state = GameState.PLAYING
+                reset_level()
+            elif event.key == pygame.K_r and game_state == GameState.GAME_OVER:
+                game_state = GameState.PLAYING
+                reset_level()
+                score = 0
+                lives = 3
+                current_level = 1
 
     if game_state == GameState.MENU:
         # Clear screen
@@ -359,13 +451,24 @@ while running:
                 pygame.draw.rect(window, YELLOW, (player_x + 36, player_y + 60, 8, random.randint(4, 8)))
             window.blit(PLAYER_IMG, (player_x, player_y))
 
+        # Draw lasers with glow effect
         for laser in lasers:
-            window.blit(LASER_IMG, (laser[0], laser[1]))
+            if double_laser:
+                # Main red beam (wider)
+                pygame.draw.rect(window, (255, 0, 0), (laser[0], laser[1], double_laser_width, laser_height))
+                # White core for glow effect
+                pygame.draw.rect(window, (255, 255, 255), (laser[0] + 4, laser[1], double_laser_width - 8, laser_height))
+            else:
+                # Main red beam
+                pygame.draw.rect(window, (255, 0, 0), (laser[0], laser[1], laser_width, laser_height))
+                # White core for glow effect
+                pygame.draw.rect(window, (255, 255, 255), (laser[0] + 2, laser[1], laser_width - 4, laser_height))
 
         if boss:
             window.blit(BOSS_IMG, (boss[0], boss[1]))
             # Draw boss health bar
-            health_width = (boss_health / LEVEL_CONFIGS[current_level]["boss_health"]) * 96
+            max_boss_health = get_level_config(current_level)["boss_health"]
+            health_width = (boss_health / max_boss_health) * 96
             pygame.draw.rect(window, RED, (boss[0], boss[1] - 10, health_width, 5))
             
             # Draw boss lasers
@@ -373,16 +476,13 @@ while running:
                 window.blit(BOSS_LASER_IMG, (boss_laser[0], boss_laser[1]))
         else:
             for enemy in enemies:
-                angle = math.sin(animation_frame * 0.1) * 15
-                rotated_enemy = pygame.transform.rotate(enemy[2], angle)
-                enemy_rect = rotated_enemy.get_rect(center=(enemy[0] + enemy_width//2, enemy[1] + enemy_height//2))
-                window.blit(rotated_enemy, enemy_rect.topleft)
+                enemy.draw(window)
 
         # Draw UI
         score_text = SMALL_FONT.render(f"SCORE: {score}", True, WHITE)
         window.blit(score_text, (10, 10))
         
-        level_text = SMALL_FONT.render(f"LEVEL: {current_level}", True, WHITE)
+        level_text = SMALL_FONT.render(f"LEVEL {current_level}", True, WHITE)
         level_rect = level_text.get_rect(midtop=(WIDTH//2, 10))
         window.blit(level_text, level_rect)
         
@@ -392,7 +492,7 @@ while running:
 
         # Draw enemies left
         if not boss:
-            enemies_left = LEVEL_CONFIGS[current_level]["enemies_to_clear"] - enemies_destroyed
+            enemies_left = get_level_config(current_level)["spawn_delay"]
             enemies_text = SMALL_FONT.render(f"Enemies Left: {enemies_left}", True, WHITE)
             enemies_rect = enemies_text.get_rect(topright=(WIDTH-10, 50))
             window.blit(enemies_text, enemies_rect)
@@ -411,6 +511,76 @@ while running:
                 crash_effect = None
             else:
                 crash_effect.draw(window)
+
+        # Spawn power-ups randomly
+        if random.random() < 0.002:  # 0.2% chance each frame
+            power_type = random.choice([0, 1, 2])  # Only spawn score multiplier, rapid fire, and shield
+            x = random.randint(20, WIDTH - 20)
+            power_ups.append(PowerUp(x, -20, power_type))
+
+        # Update power-ups
+        for power_up in power_ups[:]:
+            if not power_up.update():
+                power_ups.remove(power_up)
+            else:
+                # Check collision with player
+                power_rect = pygame.Rect(power_up.x - power_up.width/2, 
+                                       power_up.y - power_up.height/2,
+                                       power_up.width, power_up.height)
+                player_rect = pygame.Rect(player_x, player_y, player_width, player_height)
+                
+                if power_rect.colliderect(player_rect):
+                    if power_up.type == 0:  # Score multiplier
+                        SCORE_MULTIPLIER = min(MAX_MULTIPLIER, SCORE_MULTIPLIER * 2)
+                        multiplier_timer = MULTIPLIER_DURATION
+                    elif power_up.type == 1:  # Rapid fire
+                        rapid_fire = True
+                        rapid_fire_timer = 300  # 5 seconds
+                    elif power_up.type == 2:  # Shield
+                        shield_active = True
+                        shield_timer = 300  # 5 seconds
+                    powerup_sound.play()  # Play sound when collecting powerup
+                    power_ups.remove(power_up)
+
+        # Update timers
+        if multiplier_timer > 0:
+            multiplier_timer -= 1
+            if multiplier_timer <= 0:
+                SCORE_MULTIPLIER = 1
+                
+        if rapid_fire_timer > 0:
+            rapid_fire_timer -= 1
+            if rapid_fire_timer <= 0:
+                rapid_fire = False
+                
+        if shield_timer > 0:
+            shield_timer -= 1
+            if shield_timer <= 0:
+                shield_active = False
+                
+        # Draw power-ups
+        for power_up in power_ups:
+            power_up.draw(window)
+
+        # Draw active power-ups status
+        if SCORE_MULTIPLIER > 1:
+            mult_text = SMALL_FONT.render(f"{SCORE_MULTIPLIER}x", True, POWER_UP_COLORS[0])
+            window.blit(mult_text, (WIDTH - 50, 40))
+            
+        if rapid_fire:
+            rapid_text = SMALL_FONT.render("RAPID", True, POWER_UP_COLORS[1])
+            window.blit(rapid_text, (WIDTH - 60, 60))
+            
+        if shield_active:
+            shield_text = SMALL_FONT.render("SHIELD", True, POWER_UP_COLORS[2])
+            window.blit(shield_text, (WIDTH - 60, 80))
+            # Draw shield effect
+            shield_radius = max(player_width, player_height) * 0.7
+            shield_color = (128, 128, 255, 128)
+            pygame.draw.circle(window, shield_color, 
+                             (int(player_x + player_width/2), 
+                              int(player_y + player_height/2)), 
+                             int(shield_radius), 2)
 
     elif game_state == GameState.LEVEL_COMPLETE:
         # Clear screen
@@ -449,7 +619,7 @@ while running:
         window.blit(score_text, score_rect)
         
         # Draw restart instruction with medium font
-        restart = MEDIUM_FONT.render("PRESS SPACE TO RESTART", True, 
+        restart = MEDIUM_FONT.render("PRESS R TO RESTART", True, 
                                    (255, 255, 255) if int(pygame.time.get_ticks()/500) % 2 else (100, 100, 100))
         restart_rect = restart.get_rect(center=(WIDTH//2, HEIGHT*2//3))
         window.blit(restart, restart_rect)
@@ -482,11 +652,26 @@ while running:
 
         # Always allow shooting
         if keys[pygame.K_SPACE]:
-            if not lasers or lasers[-1][1] < player_y - 30:
-                laser_x = player_x + player_width // 2 - laser_width // 2
-                laser_y = player_y
-                lasers.append([laser_x, laser_y])
-                shoot_sound.play()
+            current_time = pygame.time.get_ticks()
+            if rapid_fire:
+                if not lasers or current_time - last_shot > 100:  # Faster shooting
+                    # Two wide lasers with more spacing
+                    laser_x1 = player_x + 5  # Left laser
+                    laser_x2 = player_x + player_width - 21  # Right laser
+                    laser_y = player_y + 10
+                    lasers.append([laser_x1, laser_y])
+                    lasers.append([laser_x2, laser_y])
+                    shoot_sound.play()
+                    last_shot = current_time
+            else:
+                if not lasers or lasers[-1][1] < player_y - 30:
+                    # Two wide lasers with more spacing
+                    laser_x1 = player_x + 5  # Left laser
+                    laser_x2 = player_x + player_width - 21  # Right laser
+                    laser_y = player_y + 10
+                    lasers.append([laser_x1, laser_y])
+                    lasers.append([laser_x2, laser_y])
+                    shoot_sound.play()
 
         # Always allow movement
         if keys[pygame.K_LEFT] and player_x > 0:
@@ -513,37 +698,10 @@ while running:
             # Check collision with player
             boss_laser_rect = pygame.Rect(boss_laser[0], boss_laser[1], 12, 32)
             player_rect = pygame.Rect(player_x, player_y, player_width, player_height)
+            
             if boss_laser_rect.colliderect(player_rect) and not is_crashing:
-                boss_lasers.remove(boss_laser)
-                lives -= 1  # Reduce lives by 1
-                # Crash effect
-                is_crashing = True
-                crash_recovery_timer = CRASH_RECOVERY_TIME
-                player_crash_speed = -10
-                crash_effect = CrashEffect(player_x + player_width//2, player_y + player_height//2)
-                explosion_sound.play()
-                if lives <= 0:
-                    # Multiple explosions for game over
-                    for _ in range(8):
-                        ex = random.randint(0, WIDTH)
-                        ey = random.randint(0, HEIGHT)
-                        explosions.append(Explosion(ex, ey, 3))
-                        explosion_sound.play()
-                    game_state = GameState.GAME_OVER
-
-        # Spawn and update enemies
-        if not boss:
-            enemy_timer += 1
-            if enemy_timer >= LEVEL_CONFIGS[current_level]["spawn_delay"]:
-                enemy_x = random.randint(0, WIDTH - enemy_width)
-                enemy_type = random.choice([ENEMY_IMG, ENEMY_IMG2])
-                enemies.append([enemy_x, -enemy_height, enemy_type])
-                enemy_timer = 0
-
-            for enemy in enemies[:]:
-                enemy[1] += LEVEL_CONFIGS[current_level]["enemy_speed"]
-                if enemy[1] > HEIGHT and not is_crashing:
-                    enemies.remove(enemy)
+                if not shield_active:
+                    boss_lasers.remove(boss_laser)
                     lives -= 1  # Reduce lives by 1
                     # Crash effect
                     is_crashing = True
@@ -559,6 +717,29 @@ while running:
                             explosions.append(Explosion(ex, ey, 3))
                             explosion_sound.play()
                         game_state = GameState.GAME_OVER
+                else:
+                    boss_lasers.remove(boss_laser)
+                    # Shield hit effect
+                    shield_timer = max(60, shield_timer)  # At least 1 more second
+
+        # Spawn and update enemies
+        if not boss:
+            enemy_timer += 1
+            if enemy_timer >= get_level_config(current_level)["spawn_delay"]:
+                enemy_x = random.randint(0, WIDTH - enemy_width)
+                enemy_type = random.choice([ENEMY_IMG, ENEMY_IMG2])
+                enemy_health = get_level_config(current_level)["enemy_health"]
+                enemies.append(Enemy(enemy_x, -enemy_height, enemy_type, enemy_health))
+                enemy_timer = 0
+
+            for enemy in enemies[:]:
+                enemy.y += get_level_config(current_level)["enemy_speed"]
+                if enemy.y > HEIGHT:
+                    enemies.remove(enemy)
+                    if not shield_active:  # Only lose life if not shielded
+                        lives -= 1
+                        if lives <= 0:
+                            game_state = GameState.GAME_OVER
         else:
             # Boss movement
             if boss[1] < 50:  # Boss entry
@@ -568,7 +749,7 @@ while running:
                 
                 # Boss shooting
                 boss_shoot_timer += 1
-                if boss_shoot_timer >= LEVEL_CONFIGS[current_level]["boss_shoot_delay"]:
+                if boss_shoot_timer >= get_level_config(current_level)["boss_health"]:
                     boss_shoot_timer = 0
                     
                     # Different shooting patterns for each level
@@ -595,43 +776,34 @@ while running:
 
         # Check collisions
         for laser in lasers[:]:
-            laser_rect = pygame.Rect(laser[0], laser[1], laser_width, laser_height)
+            laser_rect = pygame.Rect(laser[0], laser[1], double_laser_width, laser_height)
             
             if boss:
                 boss_rect = pygame.Rect(boss[0], boss[1], 96, 96)
                 if laser_rect.colliderect(boss_rect):
-                    if laser in lasers:
-                        lasers.remove(laser)
-                    boss_health -= 1
+                    lasers.remove(laser)
+                    boss_health -= 10
+                    explosions.append(Explosion(laser[0], laser[1], 1))
+                    explosion_sound.play()
                     if boss_health <= 0:
+                        explosions.append(Explosion(boss[0] + 48, boss[1] + 48, 3))
+                        explosion_sound.play()
                         boss = None
-                        score += 1000
-                        current_level += 1
-                        if current_level > 3:
-                            game_state = GameState.GAME_OVER
-                        else:
-                            game_state = GameState.LEVEL_COMPLETE
-                            level_start_timer = LEVEL_START_DELAY
-            else:
-                for enemy in enemies[:]:
-                    enemy_rect = pygame.Rect(enemy[0], enemy[1], enemy_width, enemy_height)
-                    if laser_rect.colliderect(enemy_rect):
-                        if laser in lasers:
-                            lasers.remove(laser)
-                        if enemy in enemies:
-                            enemies.remove(enemy)
-                            enemies_destroyed += 1
-                            score += 100
-                            # Add explosion for destroyed enemy
-                            explosions.append(Explosion(enemy[0] + enemy_width//2,
-                                                     enemy[1] + enemy_height//2))
-                            explosion_sound.play()
-                            
-                            # Check if we should spawn boss
-                            if enemies_destroyed >= LEVEL_CONFIGS[current_level]["enemies_to_clear"]:
-                                boss = [WIDTH//2 - 48, -96]  # Spawn boss above screen
-                                boss_health = LEVEL_CONFIGS[current_level]["boss_health"]
+                        current_level += 1  # Keep going up in levels
+                        game_state = GameState.LEVEL_COMPLETE
+                    continue
 
+            for enemy in enemies[:]:
+                enemy_rect = pygame.Rect(enemy.x, enemy.y, enemy_width, enemy_height)
+                if laser_rect.colliderect(enemy_rect):
+                    lasers.remove(laser)
+                    if enemy.take_damage():  # Only remove enemy if health reaches 0
+                        enemies.remove(enemy)
+                        score += 10 * SCORE_MULTIPLIER
+                        explosions.append(Explosion(enemy.x + enemy_width//2, 
+                                                 enemy.y + enemy_height//2))
+                        explosion_sound.play()
+                    break
     # Update animation frame
     animation_frame += 1
 
@@ -645,18 +817,9 @@ while running:
             explosion_sound.play()
         boss = None
         score += 1000
-        current_level += 1
-        if current_level > 3:
-            # Victory explosions
-            for _ in range(10):
-                ex = random.randint(0, WIDTH)
-                ey = random.randint(0, HEIGHT)
-                explosions.append(Explosion(ex, ey, 2))
-                explosion_sound.play()
-            game_state = GameState.GAME_OVER
-        else:
-            game_state = GameState.LEVEL_COMPLETE
-            level_start_timer = LEVEL_START_DELAY
+        current_level += 1  # Keep going up in levels
+        game_state = GameState.LEVEL_COMPLETE
+        level_start_timer = LEVEL_START_DELAY
 
 pygame.quit()
 sys.exit()
