@@ -1,33 +1,38 @@
-# Space Shooter Game
+# Retro Space Shooter
 
-A classic arcade-style space shooter game built with Python and Pygame.
+A classic arcade-style space shooter game built with Python and Pygame, featuring retro vector graphics and authentic 80s/90s arcade gameplay.
 
 ## Features
 
-- Progressive difficulty system with increasingly challenging enemies
-- Three types of enemies with unique designs and behaviors:
-  - Basic Enemies (Levels 1-3)
-  - Advanced Enemies (Levels 4-6)
-  - Elite Enemies (Level 7+)
-- Boss battles with complex movement and attack patterns
-- Power-up system including:
-  - Shields
-  - Double lasers
-  - Score multipliers
-- Dynamic scoring system
-- Retro-style graphics and effects
+- Vector-style graphics inspired by classic arcade games
+- Retro neon color scheme
+- Classic scoring system with leading zeros
+- Power-up system:
+  - Score multiplier (Gold)
+  - Rapid fire (Cyan)
+  - Shield (Magenta)
+- Infinite level progression
+- Vector-style explosions and effects
+- Custom-generated sound effects
+
+## Controls
+
+- Left/Right Arrow: Move ship
+- Spacebar: Shoot
+- X: Exit game
 
 ## Requirements
 
 - Python 3.x
-- Pygame
+- Pygame 2.5.2
+- NumPy
+- SciPy
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/[your-username]/space-shooter.git
-cd space-shooter
+git clone [your-repo-url]
 ```
 
 2. Install dependencies:
@@ -35,34 +40,11 @@ cd space-shooter
 pip install -r requirements.txt
 ```
 
-## How to Play
-
-Run the game:
+3. Run the game:
 ```bash
 python game.py
 ```
 
-### Controls
-- Arrow keys to move
-- Space to shoot
-- ESC to pause
-- Enter to start game/continue
+## Credits
 
-### Game Rules
-- Defeat enemies to progress through levels
-- Collect power-ups to enhance your ship
-- Boss appears after clearing regular enemies
-- Game ends when you run out of lives
-
-## Development
-
-The game features a modular design with separate classes for:
-- Player ship
-- Different enemy types
-- Boss mechanics
-- Power-up system
-- Particle effects
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+Created with ❤️ using Python and Pygame
