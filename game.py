@@ -40,42 +40,103 @@ NEON_BLUE = (50, 50, 255)
 NEON_GREEN = (50, 255, 50)
 NEON_PINK = (255, 50, 255)
 NEON_YELLOW = (255, 255, 50)
+RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
 
 # Player dimensions
 PLAYER_WIDTH = 40
 PLAYER_HEIGHT = 40
 
 def draw_player(surface, x, y, shield_active):
-    # Vector style spaceship (Asteroids/Defender style)
-    points = [
-        (x + PLAYER_WIDTH//2, y),  # Nose
-        (x, y + PLAYER_HEIGHT),    # Left
-        (x + PLAYER_WIDTH//2, y + PLAYER_HEIGHT - 10),  # Indent
-        (x + PLAYER_WIDTH, y + PLAYER_HEIGHT)  # Right
+    center_x = x + PLAYER_WIDTH//2
+    
+    # Main body - sleek and angular
+    body_points = [
+        (center_x, y),  # Nose tip
+        (center_x + 15, y + 15),  # Right shoulder
+        (center_x + 10, y + 25),  # Right side
+        (center_x + 15, y + PLAYER_HEIGHT - 10),  # Right wing base
+        (center_x, y + PLAYER_HEIGHT),  # Bottom point
+        (center_x - 15, y + PLAYER_HEIGHT - 10),  # Left wing base
+        (center_x - 10, y + 25),  # Left side
+        (center_x - 15, y + 15),  # Left shoulder
     ]
-    # Outline
-    pygame.draw.lines(surface, NEON_BLUE, True, points, 2)
+    pygame.draw.polygon(surface, NEON_BLUE, body_points)
     
-    # Thruster animation (classic vector style)
-    if pygame.time.get_ticks() % 200 < 100:  # Blink every 200ms
-        thrust_points = [
-            (x + PLAYER_WIDTH//2 - 10, y + PLAYER_HEIGHT),
-            (x + PLAYER_WIDTH//2, y + PLAYER_HEIGHT + 15),
-            (x + PLAYER_WIDTH//2 + 10, y + PLAYER_HEIGHT)
-        ]
-        pygame.draw.lines(surface, NEON_YELLOW, False, thrust_points, 2)
+    # Cool angular wings
+    left_wing = [
+        (center_x - 10, y + 25),  # Wing root
+        (center_x - 30, y + 30),  # Wing tip
+        (center_x - 25, y + 35),  # Back corner
+        (center_x - 15, y + PLAYER_HEIGHT - 10),  # Wing base
+    ]
+    right_wing = [
+        (center_x + 10, y + 25),
+        (center_x + 30, y + 30),
+        (center_x + 25, y + 35),
+        (center_x + 15, y + PLAYER_HEIGHT - 10),
+    ]
+    pygame.draw.polygon(surface, NEON_BLUE, left_wing)
+    pygame.draw.polygon(surface, NEON_BLUE, right_wing)
     
-    # Shield (vector circle)
+    # Energy core (center detail)
+    pygame.draw.circle(surface, (255, 255, 255), 
+                      (center_x, y + 20), 4)
+    pygame.draw.circle(surface, NEON_BLUE, 
+                      (center_x, y + 20), 2)
+    
+    # Glowing engine ports
+    engine_color = NEON_YELLOW if pygame.time.get_ticks() % 200 < 100 else NEON_BLUE
+    pygame.draw.circle(surface, engine_color,
+                      (center_x - 8, y + PLAYER_HEIGHT - 8), 3)
+    pygame.draw.circle(surface, engine_color,
+                      (center_x + 8, y + PLAYER_HEIGHT - 8), 3)
+    
+    # Power lines (energy flowing effect)
+    line_offset = abs(math.sin(pygame.time.get_ticks() * 0.01)) * 3
+    # Left power line
+    pygame.draw.line(surface, NEON_BLUE,
+                    (center_x - 15, y + 15),
+                    (center_x - 30 + line_offset, y + 30), 2)
+    # Right power line
+    pygame.draw.line(surface, NEON_BLUE,
+                    (center_x + 15, y + 15),
+                    (center_x + 30 - line_offset, y + 30), 2)
+    
+    # Energy trails
+    if pygame.time.get_ticks() % 200 < 100:
+        # Left trail
+        pygame.draw.polygon(surface, NEON_YELLOW, [
+            (center_x - 8, y + PLAYER_HEIGHT - 8),
+            (center_x - 4, y + PLAYER_HEIGHT + 5),
+            (center_x - 12, y + PLAYER_HEIGHT + 5),
+        ])
+        # Right trail
+        pygame.draw.polygon(surface, NEON_YELLOW, [
+            (center_x + 8, y + PLAYER_HEIGHT - 8),
+            (center_x + 4, y + PLAYER_HEIGHT + 5),
+            (center_x + 12, y + PLAYER_HEIGHT + 5),
+        ])
+    
+    # Cockpit energy field
+    pygame.draw.polygon(surface, (150, 200, 255), [
+        (center_x, y + 5),
+        (center_x + 6, y + 15),
+        (center_x, y + 25),
+        (center_x - 6, y + 15),
+    ])
+    
+    # Shield effect
     if shield_active:
         shield_radius = max(PLAYER_WIDTH, PLAYER_HEIGHT) * 0.75
-        for i in range(8):  # Draw 8 segments for vector look
+        for i in range(8):
             start_angle = i * math.pi / 4
             end_angle = (i + 1) * math.pi / 4
             start_pos = (x + PLAYER_WIDTH//2 + shield_radius * math.cos(start_angle),
                         y + PLAYER_HEIGHT//2 + shield_radius * math.sin(start_angle))
             end_pos = (x + PLAYER_WIDTH//2 + shield_radius * math.cos(end_angle),
                       y + PLAYER_HEIGHT//2 + shield_radius * math.sin(end_angle))
-            pygame.draw.line(surface, NEON_PINK, start_pos, end_pos, 2)
+            pygame.draw.line(surface, NEON_BLUE, start_pos, end_pos, 2)
 
 def draw_enemy(surface, x, y, enemy_type, flash=False):
     color = WHITE if flash else NEON_RED
@@ -209,12 +270,13 @@ def get_level_config(level):
 
 # Enemy class to track health
 class Enemy:
-    def __init__(self, x, y, type, health):
+    def __init__(self, x, y, type, health, level):
         self.x = x
         self.y = y
         self.type = type
         self.health = health
         self.hit_timer = 0
+        self.level = level
         
     def draw(self, surface):
         if self.hit_timer > 0:
@@ -233,6 +295,20 @@ class Enemy:
 # Score and UI
 score = 0
 high_score = 0
+
+# Load or initialize high score
+def load_high_score():
+    try:
+        with open('highscore.txt', 'r') as f:
+            return int(f.read())
+    except:
+        return 0
+
+def save_high_score(score):
+    with open('highscore.txt', 'w') as f:
+        f.write(str(score))
+
+high_score = load_high_score()
 
 # Background stars (more stars and different sizes)
 stars = []
@@ -291,6 +367,24 @@ def create_boss_ship():
     return surface
 
 BOSS_IMG = create_boss_ship()
+
+# Create game images
+PLAYER_IMG = pygame.Surface((PLAYER_WIDTH, PLAYER_HEIGHT), pygame.SRCALPHA)
+pygame.draw.polygon(PLAYER_IMG, NEON_BLUE, [
+    (PLAYER_WIDTH//2, 0),  # Top point
+    (0, PLAYER_HEIGHT),    # Bottom left
+    (PLAYER_WIDTH//2, PLAYER_HEIGHT*3//4),  # Bottom middle
+    (PLAYER_WIDTH, PLAYER_HEIGHT)  # Bottom right
+])
+
+ENEMY_IMG = pygame.Surface((enemy_width, enemy_height), pygame.SRCALPHA)
+pygame.draw.rect(ENEMY_IMG, NEON_RED, (0, 0, enemy_width, enemy_height))
+ENEMY_IMG2 = pygame.Surface((enemy_width, enemy_height), pygame.SRCALPHA)
+pygame.draw.rect(ENEMY_IMG2, NEON_GREEN, (0, 0, enemy_width, enemy_height))
+LASER_IMG = pygame.Surface((laser_width, laser_height), pygame.SRCALPHA)
+pygame.draw.rect(LASER_IMG, NEON_GREEN, (0, 0, laser_width, laser_height))
+BOSS_LASER_IMG = pygame.Surface((12, 32), pygame.SRCALPHA)
+pygame.draw.rect(BOSS_LASER_IMG, NEON_PINK, (0, 0, 12, 32))
 
 # Explosion animation
 class Explosion:
@@ -428,6 +522,130 @@ def reset_level():
     double_laser = True  # Always true now
     double_laser_timer = 0
 
+# Hit effect parameters
+SCREEN_SHAKE_AMOUNT = 20
+SCREEN_SHAKE_DURATION = 30
+FLASH_DURATION = 10
+PARTICLE_COUNT = 30
+PARTICLE_SPEED = 8
+PARTICLE_LIFETIME = 40
+
+class Particle:
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(2, PARTICLE_SPEED)
+        self.dx = math.cos(angle) * speed
+        self.dy = math.sin(angle) * speed
+        self.lifetime = PARTICLE_LIFETIME
+        self.color = color
+        self.size = random.randint(2, 4)
+
+    def update(self):
+        self.x += self.dx
+        self.y += self.dy
+        self.lifetime -= 1
+        self.dy += 0.2  # Gravity effect
+        return self.lifetime > 0
+
+    def draw(self, surface):
+        alpha = int((self.lifetime / PARTICLE_LIFETIME) * 255)
+        color = (*self.color[:3], alpha)
+        s = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, color, (self.size, self.size), self.size)
+        surface.blit(s, (int(self.x - self.size), int(self.y - self.size)))
+
+class PlayerShip:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.screen_shake = 0
+        self.flash_effect = 0
+        self.particles = []
+        self.invulnerable = 0
+        self.health = 100
+
+    def hit(self):
+        self.screen_shake = SCREEN_SHAKE_DURATION
+        self.flash_effect = FLASH_DURATION
+        self.invulnerable = 60  # 1 second of invulnerability
+        
+        # Create explosion particles
+        for _ in range(PARTICLE_COUNT):
+            self.particles.append(Particle(self.x, self.y, NEON_RED))
+        
+        # Play hit sound
+        explosion_sound.play()
+        
+        # Reduce health
+        self.health -= 20
+        if self.health <= 0:
+            return True  # Player died
+        return False
+
+    def update(self):
+        # Update screen shake
+        if self.screen_shake > 0:
+            self.screen_shake -= 1
+        
+        # Update flash effect
+        if self.flash_effect > 0:
+            self.flash_effect -= 1
+            
+        # Update invulnerability
+        if self.invulnerable > 0:
+            self.invulnerable -= 1
+            
+        # Update particles
+        self.particles = [p for p in self.particles if p.update()]
+
+    def draw(self, surface):
+        # Apply screen shake offset
+        shake_offset = (0, 0)
+        if self.screen_shake > 0:
+            shake_offset = (
+                random.randint(-SCREEN_SHAKE_AMOUNT, SCREEN_SHAKE_AMOUNT),
+                random.randint(-SCREEN_SHAKE_AMOUNT, SCREEN_SHAKE_AMOUNT)
+            )
+            
+        # Draw particles behind player
+        for particle in self.particles:
+            particle.draw(surface)
+            
+        # Draw player with flash effect
+        if self.flash_effect > 0:
+            # Create white flash version of player
+            flash_surface = pygame.Surface((PLAYER_WIDTH, PLAYER_HEIGHT), pygame.SRCALPHA)
+            pygame.draw.polygon(flash_surface, WHITE, [
+                (PLAYER_WIDTH//2, 0),  # Top point
+                (0, PLAYER_HEIGHT),    # Bottom left
+                (PLAYER_WIDTH//2, PLAYER_HEIGHT*3//4),  # Bottom middle
+                (PLAYER_WIDTH, PLAYER_HEIGHT)  # Bottom right
+            ])
+            surface.blit(flash_surface, 
+                        (self.x - PLAYER_WIDTH//2 + shake_offset[0], 
+                         self.y - PLAYER_HEIGHT//2 + shake_offset[1]))
+        else:
+            # Normal player drawing with invulnerability blinking
+            if self.invulnerable == 0 or self.invulnerable % 6 < 3:
+                surface.blit(PLAYER_IMG, 
+                           (self.x - PLAYER_WIDTH//2 + shake_offset[0], 
+                            self.y - PLAYER_HEIGHT//2 + shake_offset[1]))
+        
+        # Draw health bar
+        health_width = (PLAYER_WIDTH * self.health) // 100
+        pygame.draw.rect(surface, RED, 
+                        (self.x - PLAYER_WIDTH//2, 
+                         self.y + PLAYER_HEIGHT//2 + 5, 
+                         PLAYER_WIDTH, 5))
+        pygame.draw.rect(surface, NEON_GREEN, 
+                        (self.x - PLAYER_WIDTH//2, 
+                         self.y + PLAYER_HEIGHT//2 + 5, 
+                         health_width, 5))
+
+player_ship = PlayerShip(player_x, player_y)
+
 # Game loop
 clock = pygame.time.Clock()
 running = True
@@ -478,7 +696,8 @@ while running:
             pygame.draw.circle(window, WHITE, (int(star[0]), int(star[1])), star[3])
 
         # Draw the player
-        draw_player(window, player_x, player_y, shield_active)
+        player_ship.update()
+        player_ship.draw(window)
         
         # Draw enemies
         for enemy in enemies:
@@ -499,7 +718,10 @@ while running:
         # Draw UI
         draw_score(window, score, 10, 10)
         
-        level_text = SMALL_FONT.render(f"LEVEL {current_level}", True, NEON_BLUE)
+        high_score_text = SMALL_FONT.render(f"HIGH: {high_score}", True, YELLOW)
+        window.blit(high_score_text, (10, 40))
+        
+        level_text = SMALL_FONT.render(f"LEVEL {current_level}", True, WHITE)
         level_rect = level_text.get_rect(midtop=(WIDTH//2, 10))
         window.blit(level_text, level_rect)
         
@@ -533,7 +755,7 @@ while running:
                 power_rect = pygame.Rect(power_up.x - power_up.width/2, 
                                        power_up.y - power_up.height/2,
                                        power_up.width, power_up.height)
-                player_rect = pygame.Rect(player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT)
+                player_rect = pygame.Rect(player_ship.x - PLAYER_WIDTH//2, player_ship.y - PLAYER_HEIGHT//2, PLAYER_WIDTH, PLAYER_HEIGHT)
                 
                 if power_rect.colliderect(player_rect):
                     if power_up.type == 0:  # Score multiplier
@@ -584,8 +806,8 @@ while running:
             shield_radius = max(PLAYER_WIDTH, PLAYER_HEIGHT) * 0.7
             shield_color = (128, 128, 255, 128)
             pygame.draw.circle(window, shield_color, 
-                             (int(player_x + PLAYER_WIDTH/2), 
-                              int(player_y + PLAYER_HEIGHT/2)), 
+                             (int(player_ship.x), 
+                              int(player_ship.y)), 
                              int(shield_radius), 2)
 
     elif game_state == GameState.LEVEL_COMPLETE:
@@ -614,21 +836,44 @@ while running:
         for star in stars:
             pygame.draw.circle(window, WHITE, (int(star[0]), int(star[1])), star[3])
 
-        # Draw "GAME OVER" with large font
-        game_over = LARGE_FONT.render("GAME OVER", True, (255, 0, 0))
-        game_over_rect = game_over.get_rect(center=(WIDTH//2, HEIGHT//3))
-        window.blit(game_over, game_over_rect)
+        # Update high score
+        if score > high_score:
+            high_score = score
+            save_high_score(high_score)
         
-        # Draw final score with medium font
-        score_text = MEDIUM_FONT.render(f"SCORE: {score}", True, (255, 255, 255))
+        # Draw "GAME OVER"
+        game_over_text = LARGE_FONT.render("GAME OVER", True, RED)
+        game_over_rect = game_over_text.get_rect(center=(WIDTH//2, HEIGHT//3))
+        window.blit(game_over_text, game_over_rect)
+        
+        # Draw final score
+        score_text = MEDIUM_FONT.render(f"Final Score: {score}", True, WHITE)
         score_rect = score_text.get_rect(center=(WIDTH//2, HEIGHT//2))
         window.blit(score_text, score_rect)
         
-        # Draw restart instruction with medium font
-        restart = MEDIUM_FONT.render("PRESS R TO RESTART", True, 
-                                   (255, 255, 255) if int(pygame.time.get_ticks()/500) % 2 else (100, 100, 100))
-        restart_rect = restart.get_rect(center=(WIDTH//2, HEIGHT*2//3))
-        window.blit(restart, restart_rect)
+        # Draw high score
+        high_score_text = MEDIUM_FONT.render(f"High Score: {high_score}", True, YELLOW)
+        high_score_rect = high_score_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 50))
+        window.blit(high_score_text, high_score_rect)
+        
+        # Draw restart prompt
+        restart_text = SMALL_FONT.render("Press ENTER to play again", True, WHITE)
+        restart_rect = restart_text.get_rect(center=(WIDTH//2, HEIGHT*3//4))
+        window.blit(restart_text, restart_rect)
+        
+        # Check for restart
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_RETURN]:
+            # Reset game
+            score = 0
+            lives = 3
+            current_level = 1
+            enemies = []
+            lasers = []
+            boss = None
+            enemies_destroyed = 0
+            game_state = GameState.PLAYING
+            level_start_timer = LEVEL_START_DELAY
 
     # Update display
     pygame.display.flip()
@@ -639,13 +884,13 @@ while running:
         # Update crash animation
         if is_crashing:
             # Simple up and down movement
-            player_y += player_crash_speed
+            player_ship.y += player_crash_speed
             player_crash_speed += 0.5  # Gravity
             
             # Bounce off bottom of screen
-            if player_y > HEIGHT - PLAYER_HEIGHT:
+            if player_ship.y > HEIGHT - PLAYER_HEIGHT:
                 player_crash_speed = -player_crash_speed * 0.5
-                player_y = HEIGHT - PLAYER_HEIGHT
+                player_ship.y = HEIGHT - PLAYER_HEIGHT
                 
                 # Only recover if we still have lives
                 crash_recovery_timer -= 1
@@ -662,28 +907,28 @@ while running:
             if rapid_fire:
                 if not lasers or current_time - last_shot > 100:  # Faster shooting
                     # Two wide lasers with more spacing
-                    laser_x1 = player_x + 5  # Left laser
-                    laser_x2 = player_x + PLAYER_WIDTH - 21  # Right laser
-                    laser_y = player_y + 10
+                    laser_x1 = player_ship.x - 5  # Left laser
+                    laser_x2 = player_ship.x + PLAYER_WIDTH - 21  # Right laser
+                    laser_y = player_ship.y + 10
                     lasers.append([laser_x1, laser_y])
                     lasers.append([laser_x2, laser_y])
                     shoot_sound.play()
                     last_shot = current_time
             else:
-                if not lasers or lasers[-1][1] < player_y - 30:
+                if not lasers or lasers[-1][1] < player_ship.y - 30:
                     # Two wide lasers with more spacing
-                    laser_x1 = player_x + 5  # Left laser
-                    laser_x2 = player_x + PLAYER_WIDTH - 21  # Right laser
-                    laser_y = player_y + 10
+                    laser_x1 = player_ship.x - 5  # Left laser
+                    laser_x2 = player_ship.x + PLAYER_WIDTH - 21  # Right laser
+                    laser_y = player_ship.y + 10
                     lasers.append([laser_x1, laser_y])
                     lasers.append([laser_x2, laser_y])
                     shoot_sound.play()
 
         # Always allow movement
-        if keys[pygame.K_LEFT] and player_x > 0:
-            player_x -= player_speed
-        if keys[pygame.K_RIGHT] and player_x < WIDTH - PLAYER_WIDTH:
-            player_x += player_speed
+        if keys[pygame.K_LEFT] and player_ship.x > 0:
+            player_ship.x -= player_speed
+        if keys[pygame.K_RIGHT] and player_ship.x < WIDTH - PLAYER_WIDTH:
+            player_ship.x += player_speed
 
         # Update stars
         for star in stars:
@@ -703,7 +948,7 @@ while running:
 
             # Check collision with player
             boss_laser_rect = pygame.Rect(boss_laser[0], boss_laser[1], 12, 32)
-            player_rect = pygame.Rect(player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT)
+            player_rect = pygame.Rect(player_ship.x - PLAYER_WIDTH//2, player_ship.y - PLAYER_HEIGHT//2, PLAYER_WIDTH, PLAYER_HEIGHT)
             
             if boss_laser_rect.colliderect(player_rect) and not is_crashing:
                 if not shield_active:
@@ -713,7 +958,7 @@ while running:
                     is_crashing = True
                     crash_recovery_timer = CRASH_RECOVERY_TIME
                     player_crash_speed = -10
-                    crash_effect = CrashEffect(player_x + PLAYER_WIDTH//2, player_y + PLAYER_HEIGHT//2)
+                    crash_effect = CrashEffect(player_ship.x + PLAYER_WIDTH//2, player_ship.y + PLAYER_HEIGHT//2)
                     explosion_sound.play()
                     if lives <= 0:
                         # Multiple explosions for game over
@@ -731,12 +976,14 @@ while running:
         # Spawn and update enemies
         if not boss:
             enemy_timer += 1
-            if enemy_timer >= get_level_config(current_level)["spawn_delay"]:
-                enemy_x = random.randint(0, WIDTH - enemy_width)
-                enemy_type = random.choice([ENEMY_IMG, ENEMY_IMG2])
-                enemy_health = get_level_config(current_level)["enemy_health"]
-                enemies.append(Enemy(enemy_x, -enemy_height, enemy_type, enemy_health))
+            enemies_remaining = get_level_config(current_level)["spawn_delay"] - enemies_destroyed
+            if enemy_timer >= 60 and enemies_remaining > 0:
                 enemy_timer = 0
+                x = random.randint(0, WIDTH - enemy_width)
+                enemy_type = random.choice([ENEMY_IMG, ENEMY_IMG2])  # Choose between type 1 and 2
+                enemies.append(Enemy(x, -enemy_height, enemy_type, 
+                                   get_level_config(current_level)["enemy_health"],
+                                   current_level))
 
             for enemy in enemies[:]:
                 enemy.y += get_level_config(current_level)["enemy_speed"]
@@ -826,6 +1073,30 @@ while running:
         current_level += 1  # Keep going up in levels
         game_state = GameState.LEVEL_COMPLETE
         level_start_timer = LEVEL_START_DELAY
+
+    # In the game loop, update collision detection
+    for enemy in enemies[:]:
+        for laser in lasers[:]:
+            if (abs(laser[0] - enemy.x) < enemy_width//2 and 
+                abs(laser[1] - enemy.y) < enemy_height//2):
+                lasers.remove(laser)
+                enemy.health -= 1
+                if enemy.health <= 0:
+                    enemies.remove(enemy)
+                    enemies_destroyed += 1
+                    score += 100
+                    # Create explosion effect
+                    explosions.append(Explosion(enemy.x, enemy.y))
+                break
+        
+        # Player collision
+        if not player_ship.invulnerable:  # Only check collision if not invulnerable
+            if (abs(player_ship.x - enemy.x) < (enemy_width + PLAYER_WIDTH)//2 and 
+                abs(player_ship.y - enemy.y) < (enemy_height + PLAYER_HEIGHT)//2):
+                enemies.remove(enemy)
+                if player_ship.hit():  # Player died
+                    game_state = GameState.GAME_OVER
+                break
 
 pygame.quit()
 sys.exit()
